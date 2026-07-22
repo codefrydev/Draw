@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Draw</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Draw",
+      "url": "https://codefrydev.github.io/Draw/",
+      "description": "A free infinite canvas drawing app with pen, eraser, and pan tools. Supports undo/redo, sketch history, color picker, and PNG export.",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires a modern web browser with HTML5 Canvas support",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.6",
+        "ratingCount": "1700",
+        "bestRating": "5",
+        "worstRating": "1"
+      },
+      "author": {
+        "@type": "Person",
+        "name": "Prashant",
+        "url": "https://codefrydev.in"
+      }
+    }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Deferred Analytics & Tracking -->
+    <script type="text/javascript">
+      (function() {
+        let trackingLoaded = false;
+
+        function loadTrackingScripts() {
+          if (trackingLoaded) return;
+          trackingLoaded = true;
+
+          // 1. Google Analytics
+          const gaScript = document.createElement('script');
+          gaScript.async = true;
+          gaScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-VM01Q3R43D';
+          document.head.appendChild(gaScript);
+
+          window.dataLayer = window.dataLayer || [];
+          function gtag() { dataLayer.push(arguments); }
+          gtag('js', new Date());
+          gtag('config', 'G-VM01Q3R43D');
+
+          // 2. Microsoft Clarity
+          (function(c,l,a,r,i,t,y){
+            c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+            t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+            y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+          })(window, document, "clarity", "script", "mxr4hxioh4");
+
+          ['scroll', 'mousemove', 'touchstart', 'keydown', 'click'].forEach(function(event) {
+            window.removeEventListener(event, loadTrackingScripts);
+          });
+        }
+
+        ['scroll', 'mousemove', 'touchstart', 'keydown', 'click'].forEach(function(event) {
+          window.addEventListener(event, loadTrackingScripts, { once: true, passive: true });
+        });
+
+        setTimeout(loadTrackingScripts, 5000);
+      })();
+    </script>
+  </body>
+</html>
