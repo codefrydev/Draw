@@ -1,6 +1,6 @@
 export type ShapeKind = 'rectangle' | 'circle' | 'line' | 'triangle' | 'diamond' | 'arrow';
 
-export type Tool = 'pen' | 'eraser' | 'pan' | 'text' | ShapeKind;
+export type Tool = 'pen' | 'eraser' | 'pan' | 'text' | 'select' | ShapeKind;
 
 export interface Point {
   x: number;
@@ -50,7 +50,9 @@ export type DrawingAction =
   | { type: 'UNDO' }
   | { type: 'REDO' }
   | { type: 'CLEAR' }
-  | { type: 'LOAD_SKETCH'; paths: DrawingElement[]; redoStack: DrawingElement[] };
+  | { type: 'LOAD_SKETCH'; paths: DrawingElement[]; redoStack: DrawingElement[] }
+  | { type: 'UPDATE_ELEMENT'; index: number; element: DrawingElement }
+  | { type: 'REMOVE_ELEMENT'; index: number };
 
 export interface Sketch {
   id: string;

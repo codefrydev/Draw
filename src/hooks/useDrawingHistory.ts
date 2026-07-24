@@ -60,6 +60,20 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
         redoStack: action.redoStack,
         redrawVersion: state.redrawVersion + 1,
       };
+    case 'UPDATE_ELEMENT': {
+      if (action.index < 0 || action.index >= state.paths.length) return state;
+      const newPaths = [...state.paths];
+      newPaths[action.index] = action.element;
+      return { paths: newPaths, redoStack: [], redrawVersion: state.redrawVersion };
+    }
+    case 'REMOVE_ELEMENT': {
+      if (action.index < 0 || action.index >= state.paths.length) return state;
+      return {
+        paths: [...state.paths.slice(0, action.index), ...state.paths.slice(action.index + 1)],
+        redoStack: [],
+        redrawVersion: state.redrawVersion + 1,
+      };
+    }
     default:
       return state;
   }

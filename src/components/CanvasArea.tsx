@@ -1,7 +1,18 @@
 import { useEffect, useRef, useImperativeHandle, forwardRef, useState, useCallback } from 'react';
-import type { Tool, PathRecord, Camera, DrawingState, Point, ShapeKind } from '../types/drawing.types';
+import type { Tool, PathRecord, Camera, DrawingState, Point, ShapeKind, DrawingElement } from '../types/drawing.types';
 import type { DrawingAction } from '../types/drawing.types';
-import { getPos, redraw, drawSegment, drawShapePreview } from '../hooks/useCanvasRenderer';
+import {
+  getPos, redraw, drawSegment, drawShapePreview,
+  findElementAt, hitTestElement, hitTestHandle, getElementBounds,
+  drawSelectionOverlay, moveElement, resizeElement,
+} from '../hooks/useCanvasRenderer';
+
+const HANDLE_CURSORS: readonly string[] = [
+  'nwse-resize', 'ns-resize', 'nesw-resize', 'ew-resize',
+  'nwse-resize', 'ns-resize', 'nesw-resize', 'ew-resize',
+];
+const HIT_TOLERANCE    = 8;
+const HANDLE_TOLERANCE = 8;
 
 export interface CanvasAreaHandle {
   resetCamera: () => void;
@@ -46,6 +57,12 @@ export const CanvasArea = forwardRef<CanvasAreaHandle, Props>(function CanvasAre
   const isDrawingShapeRef = useRef(false);
   const shapeStartRef = useRef<Point | null>(null);
 
+  // Select tool state
+  const selectedIndexRef          = useRef<number>(-1);
+  const selectDragModeRef         = useRef<'move' | number | null>(null);
+  const selectDragStartWorldRef   = useRef<Point | null>(null);
+  const selectDragOrigElementRef  = useRef<DrawingElement | null>(null);
+
   // Text tool state
   const [textInput, setTextInput] = useState<TextInputState | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -54,7 +71,27 @@ export const CanvasArea = forwardRef<CanvasAreaHandle, Props>(function CanvasAre
   const currentToolRef = useRef(currentTool);
   const colorRef = useRef(color);
   const brushSizeRef = useRef(brushSize);
-  useEffect(() => { currentToolRef.current = currentTool; updateCursor(); }, [currentTool]);
+  useEffect(() => {
+    currentToolRef.current = currentTool;
+    updateCursor();
+    const canvas = canvasRef.current;
+    const ctx = ctxRef.current;
+    if (!canvas || !ctx) return;
+    if (currentTool !== 'select') {
+      selectedIndexRef.current = -1;
+      selectDragModeRef.current = null;
+      selectDragStartWorldRef.current = null;
+      selectDragOrigElementRef.current = null;
+      redraw(canvas, ctx, pathsRef.current, cameraRef.current);
+    } else {
+      redraw(canvas, ctx, pathsRef.current, cameraRef.current);
+      const idx = selectedIndexRef.current;
+      if (idx >= 0 && idx < pathsRef.current.length) {
+        drawSelectionOverlay(ctx, pathsRef.current[idx], cameraRef.current);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTool]);
   useEffect(() => { colorRef.current = color; }, [color]);
   useEffect(() => { brushSizeRef.current = brushSize; }, [brushSize]);
   useEffect(() => { pathsRef.current = historyState.paths; }, [historyState.paths]);
@@ -105,7 +142,7 @@ export const CanvasArea = forwardRef<CanvasAreaHandle, Props>(function CanvasAre
     },
   }));
 
-  function updateCursor() {
+  function updateCursor(hoverHandleIdx?: number, isHoveringElement?: boolean) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const tool = currentToolRef.current;
@@ -114,6 +151,14 @@ export const CanvasArea = forwardRef<CanvasAreaHandle, Props>(function CanvasAre
       canvas.style.cursor = isDraggingRef.current ? 'grabbing' : 'grab';
     } else if (tool === 'eraser') {
       canvas.style.cursor = 'cell';
+    } else if (tool === 'select') {
+      if (hoverHandleIdx !== undefined && hoverHandleIdx >= 0) {
+        canvas.style.cursor = HANDLE_CURSORS[hoverHandleIdx];
+      } else if (isHoveringElement) {
+        canvas.style.cursor = 'move';
+      } else {
+        canvas.style.cursor = 'default';
+      }
     } else {
       canvas.style.cursor = 'crosshair';
     }
@@ -127,13 +172,37 @@ export const CanvasArea = forwardRef<CanvasAreaHandle, Props>(function CanvasAre
     canvas.height = window.innerHeight;
   }, []);
 
-  // Full redraw on history changes (undo/redo/clear)
+  // Full redraw on history changes (undo/redo/clear/remove)
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = ctxRef.current;
     if (!canvas || !ctx) return;
+    selectedIndexRef.current = -1;
+    selectDragModeRef.current = null;
+    selectDragStartWorldRef.current = null;
+    selectDragOrigElementRef.current = null;
     redraw(canvas, ctx, pathsRef.current, cameraRef.current);
   }, [historyState.redrawVersion]);
+
+  // Delete/Backspace removes selected element
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (currentToolRef.current !== 'select') return;
+      if (selectedIndexRef.current < 0) return;
+      const active = document.activeElement;
+      if (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) return;
+      e.preventDefault();
+      const idx = selectedIndexRef.current;
+      selectedIndexRef.current = -1;
+      selectDragModeRef.current = null;
+      selectDragStartWorldRef.current = null;
+      selectDragOrigElementRef.current = null;
+      dispatch({ type: 'REMOVE_ELEMENT', index: idx });
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [dispatch]);
 
   // Native event listeners (stable, read from refs)
   useEffect(() => {
@@ -160,6 +229,47 @@ export const CanvasArea = forwardRef<CanvasAreaHandle, Props>(function CanvasAre
 
       if (tool === 'text') return; // handled by React onClick
 
+      if (tool === 'select') {
+        const worldPt = { x: pos.x - cameraRef.current.x, y: pos.y - cameraRef.current.y };
+        const ctx = ctxRef.current;
+        const currentIdx = selectedIndexRef.current;
+        if (currentIdx >= 0 && currentIdx < pathsRef.current.length) {
+          const el = pathsRef.current[currentIdx];
+          const bounds = getElementBounds(el);
+          const handleIdx = hitTestHandle(worldPt, bounds, cameraRef.current, HANDLE_TOLERANCE);
+          if (handleIdx >= 0) {
+            selectDragModeRef.current = handleIdx;
+            selectDragStartWorldRef.current = worldPt;
+            selectDragOrigElementRef.current = el;
+            return;
+          }
+          if (hitTestElement(worldPt, el, HIT_TOLERANCE)) {
+            selectDragModeRef.current = 'move';
+            selectDragStartWorldRef.current = worldPt;
+            selectDragOrigElementRef.current = el;
+            return;
+          }
+        }
+        const newIdx = findElementAt(worldPt, pathsRef.current);
+        if (newIdx >= 0) {
+          selectedIndexRef.current = newIdx;
+          selectDragModeRef.current = 'move';
+          selectDragStartWorldRef.current = worldPt;
+          selectDragOrigElementRef.current = pathsRef.current[newIdx];
+          if (ctx) {
+            redraw(canvas, ctx, pathsRef.current, cameraRef.current);
+            drawSelectionOverlay(ctx, pathsRef.current[newIdx], cameraRef.current);
+          }
+          return;
+        }
+        if (selectedIndexRef.current >= 0) {
+          selectedIndexRef.current = -1;
+          selectDragModeRef.current = null;
+          if (ctx) redraw(canvas, ctx, pathsRef.current, cameraRef.current);
+        }
+        return;
+      }
+
       if (SHAPE_TOOLS.has(tool)) {
         isDrawingShapeRef.current = true;
         isDrawingRef.current = false;
@@ -177,6 +287,42 @@ export const CanvasArea = forwardRef<CanvasAreaHandle, Props>(function CanvasAre
     }
 
     function handleMouseMove(e: MouseEvent) {
+      const moveTool = currentToolRef.current;
+
+      if (moveTool === 'select') {
+        const pos = getPos(e, canvas);
+        const worldPt = { x: pos.x - cameraRef.current.x, y: pos.y - cameraRef.current.y };
+        const ctx = ctxRef.current!;
+
+        if (selectDragModeRef.current !== null && selectDragStartWorldRef.current && selectDragOrigElementRef.current) {
+          const dx = worldPt.x - selectDragStartWorldRef.current.x;
+          const dy = worldPt.y - selectDragStartWorldRef.current.y;
+          const origEl = selectDragOrigElementRef.current;
+          const idx = selectedIndexRef.current;
+          const modifiedEl = selectDragModeRef.current === 'move'
+            ? moveElement(origEl, dx, dy)
+            : resizeElement(origEl, selectDragModeRef.current as number, dx, dy);
+          const previewPaths = [
+            ...pathsRef.current.slice(0, idx),
+            modifiedEl,
+            ...pathsRef.current.slice(idx + 1),
+          ];
+          redraw(canvas, ctx, previewPaths, cameraRef.current);
+          drawSelectionOverlay(ctx, modifiedEl, cameraRef.current);
+        } else {
+          const idx = selectedIndexRef.current;
+          if (idx >= 0 && idx < pathsRef.current.length) {
+            const el = pathsRef.current[idx];
+            const bounds = getElementBounds(el);
+            const handleIdx = hitTestHandle(worldPt, bounds, cameraRef.current, HANDLE_TOLERANCE);
+            if (handleIdx >= 0) { updateCursor(handleIdx); return; }
+            if (hitTestElement(worldPt, el, HIT_TOLERANCE)) { updateCursor(undefined, true); return; }
+          }
+          updateCursor();
+        }
+        return;
+      }
+
       if (!isDrawingRef.current && !isDraggingRef.current && !isDrawingShapeRef.current) return;
       const pos = getPos(e, canvas);
       const ctx = ctxRef.current!;
@@ -221,6 +367,39 @@ export const CanvasArea = forwardRef<CanvasAreaHandle, Props>(function CanvasAre
       if (isDraggingRef.current) {
         isDraggingRef.current = false;
         updateCursor();
+      }
+
+      if (currentToolRef.current === 'select' && selectDragModeRef.current !== null) {
+        const dragMode = selectDragModeRef.current;
+        const startWorld = selectDragStartWorldRef.current;
+        const origEl = selectDragOrigElementRef.current;
+        const idx = selectedIndexRef.current;
+        selectDragModeRef.current = null;
+        selectDragStartWorldRef.current = null;
+        selectDragOrigElementRef.current = null;
+        if (startWorld && origEl && idx >= 0 && idx < pathsRef.current.length) {
+          const pos2 = getPos(e, canvas);
+          const worldPt = { x: pos2.x - cameraRef.current.x, y: pos2.y - cameraRef.current.y };
+          const dx = worldPt.x - startWorld.x;
+          const dy = worldPt.y - startWorld.y;
+          if (dx !== 0 || dy !== 0) {
+            const finalEl = dragMode === 'move'
+              ? moveElement(origEl, dx, dy)
+              : resizeElement(origEl, dragMode as number, dx, dy);
+            const finalPaths = [...pathsRef.current.slice(0, idx), finalEl, ...pathsRef.current.slice(idx + 1)];
+            dispatch({ type: 'UPDATE_ELEMENT', index: idx, element: finalEl });
+            pathsRef.current = finalPaths;
+            const c = canvasRef.current, x = ctxRef.current;
+            if (c && x) { redraw(c, x, finalPaths, cameraRef.current); drawSelectionOverlay(x, finalEl, cameraRef.current); }
+          } else {
+            const c = canvasRef.current, x = ctxRef.current;
+            if (c && x) {
+              redraw(c, x, pathsRef.current, cameraRef.current);
+              if (selectedIndexRef.current >= 0) drawSelectionOverlay(x, pathsRef.current[selectedIndexRef.current], cameraRef.current);
+            }
+          }
+        }
+        return;
       }
 
       if (isDrawingShapeRef.current && shapeStartRef.current) {
@@ -272,6 +451,44 @@ export const CanvasArea = forwardRef<CanvasAreaHandle, Props>(function CanvasAre
 
       if (tool === 'text') return; // handled by React onClick
 
+      if (tool === 'select') {
+        const worldPt = { x: pos.x - cameraRef.current.x, y: pos.y - cameraRef.current.y };
+        const ctx = ctxRef.current;
+        const currentIdx = selectedIndexRef.current;
+        if (currentIdx >= 0 && currentIdx < pathsRef.current.length) {
+          const el = pathsRef.current[currentIdx];
+          const bounds = getElementBounds(el);
+          const handleIdx = hitTestHandle(worldPt, bounds, cameraRef.current, HANDLE_TOLERANCE);
+          if (handleIdx >= 0) {
+            selectDragModeRef.current = handleIdx;
+            selectDragStartWorldRef.current = worldPt;
+            selectDragOrigElementRef.current = el;
+            return;
+          }
+          if (hitTestElement(worldPt, el, HIT_TOLERANCE)) {
+            selectDragModeRef.current = 'move';
+            selectDragStartWorldRef.current = worldPt;
+            selectDragOrigElementRef.current = el;
+            return;
+          }
+        }
+        const newIdx = findElementAt(worldPt, pathsRef.current);
+        if (newIdx >= 0) {
+          selectedIndexRef.current = newIdx;
+          selectDragModeRef.current = 'move';
+          selectDragStartWorldRef.current = worldPt;
+          selectDragOrigElementRef.current = pathsRef.current[newIdx];
+          if (ctx) { redraw(canvas, ctx, pathsRef.current, cameraRef.current); drawSelectionOverlay(ctx, pathsRef.current[newIdx], cameraRef.current); }
+          return;
+        }
+        if (selectedIndexRef.current >= 0) {
+          selectedIndexRef.current = -1;
+          selectDragModeRef.current = null;
+          if (ctx) redraw(canvas, ctx, pathsRef.current, cameraRef.current);
+        }
+        return;
+      }
+
       if (SHAPE_TOOLS.has(tool)) {
         isDrawingShapeRef.current = true;
         isDrawingRef.current = false;
@@ -290,6 +507,27 @@ export const CanvasArea = forwardRef<CanvasAreaHandle, Props>(function CanvasAre
 
     function handleTouchMove(e: TouchEvent) {
       e.preventDefault();
+      const moveTool = currentToolRef.current;
+
+      if (moveTool === 'select') {
+        const pos = getPos(e, canvas);
+        const worldPt = { x: pos.x - cameraRef.current.x, y: pos.y - cameraRef.current.y };
+        const ctx = ctxRef.current!;
+        if (selectDragModeRef.current !== null && selectDragStartWorldRef.current && selectDragOrigElementRef.current) {
+          const dx = worldPt.x - selectDragStartWorldRef.current.x;
+          const dy = worldPt.y - selectDragStartWorldRef.current.y;
+          const origEl = selectDragOrigElementRef.current;
+          const idx = selectedIndexRef.current;
+          const modifiedEl = selectDragModeRef.current === 'move'
+            ? moveElement(origEl, dx, dy)
+            : resizeElement(origEl, selectDragModeRef.current as number, dx, dy);
+          const previewPaths = [...pathsRef.current.slice(0, idx), modifiedEl, ...pathsRef.current.slice(idx + 1)];
+          redraw(canvas, ctx, previewPaths, cameraRef.current);
+          drawSelectionOverlay(ctx, modifiedEl, cameraRef.current);
+        }
+        return;
+      }
+
       const pos = getPos(e, canvas);
       const ctx = ctxRef.current!;
 
@@ -333,6 +571,34 @@ export const CanvasArea = forwardRef<CanvasAreaHandle, Props>(function CanvasAre
       if (isDraggingRef.current) {
         isDraggingRef.current = false;
         updateCursor();
+      }
+
+      if (currentToolRef.current === 'select' && selectDragModeRef.current !== null) {
+        const dragMode = selectDragModeRef.current;
+        const startWorld = selectDragStartWorldRef.current;
+        const origEl = selectDragOrigElementRef.current;
+        const idx = selectedIndexRef.current;
+        selectDragModeRef.current = null;
+        selectDragStartWorldRef.current = null;
+        selectDragOrigElementRef.current = null;
+        if (startWorld && origEl && idx >= 0 && idx < pathsRef.current.length && e.changedTouches.length > 0) {
+          const touch = e.changedTouches[0];
+          const rect = canvas.getBoundingClientRect();
+          const worldPt = { x: touch.clientX - rect.left - cameraRef.current.x, y: touch.clientY - rect.top - cameraRef.current.y };
+          const dx = worldPt.x - startWorld.x;
+          const dy = worldPt.y - startWorld.y;
+          if (dx !== 0 || dy !== 0) {
+            const finalEl = dragMode === 'move'
+              ? moveElement(origEl, dx, dy)
+              : resizeElement(origEl, dragMode as number, dx, dy);
+            const finalPaths = [...pathsRef.current.slice(0, idx), finalEl, ...pathsRef.current.slice(idx + 1)];
+            dispatch({ type: 'UPDATE_ELEMENT', index: idx, element: finalEl });
+            pathsRef.current = finalPaths;
+            const c = canvasRef.current, x = ctxRef.current;
+            if (c && x) { redraw(c, x, finalPaths, cameraRef.current); drawSelectionOverlay(x, finalEl, cameraRef.current); }
+          }
+        }
+        return;
       }
 
       if (isDrawingShapeRef.current && shapeStartRef.current) {

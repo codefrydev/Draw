@@ -25,6 +25,12 @@ interface Props {
 
 const Divider = () => <div className="w-px h-8 bg-gray-200 mx-1 shrink-0" />;
 
+const SelectIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m4 4 7.07 17 2.51-7.39L21 11.07z"/>
+  </svg>
+);
+
 const PanIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M10 9l-3 3 3 3"/><path d="M14 9l3 3-3 3"/><path d="M3 12h18"/><path d="M12 3v18"/>
@@ -116,6 +122,7 @@ export const Toolbar = React.memo(function Toolbar({
       <BrushSizeSlider size={brushSize} onChange={onBrushSizeChange} />
       <Divider />
       <div className="flex items-center gap-1 shrink-0">
+        <ToolButton icon={<SelectIcon />} label="Select" isActive={currentTool === 'select'} activeClass="bg-violet-100 text-violet-600 focus:ring-violet-400" onClick={() => onToolChange('select')} />
         <ToolButton icon={<PanIcon />} label="Pan (Space)" isActive={currentTool === 'pan'} activeClass="bg-gray-200 text-gray-800 focus:ring-gray-300" onClick={() => onToolChange('pan')} />
         <ToolButton icon={<PenIcon />} label="Pen" isActive={currentTool === 'pen'} activeClass="bg-blue-100 text-blue-600 focus:ring-blue-400" onClick={() => onToolChange('pen')} />
         <ToolButton icon={<EraserIcon />} label="Eraser" isActive={currentTool === 'eraser'} activeClass="bg-gray-200 text-gray-800 focus:ring-gray-300" onClick={() => onToolChange('eraser')} />
