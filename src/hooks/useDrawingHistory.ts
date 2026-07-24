@@ -1,9 +1,9 @@
 import { useReducer, useEffect } from 'react';
-import type { DrawingState, DrawingAction, PathRecord } from '../types/drawing.types';
+import type { DrawingState, DrawingAction, DrawingElement } from '../types/drawing.types';
 
 const STORAGE_KEY = 'sketchpad-history';
 
-function loadFromStorage(): { paths: PathRecord[]; redoStack: PathRecord[] } {
+function loadFromStorage(): { paths: DrawingElement[]; redoStack: DrawingElement[] } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { paths: [], redoStack: [] };
@@ -24,12 +24,15 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
       return {
         paths: [...state.paths, action.path],
         redoStack: [],
-        redrawVersion: state.redrawVersion,
+        // bump redrawVersion for non-freehand elements so canvas redraws immediately
+        redrawVersion: (action.path.mode === 'text' || action.path.mode === 'shape')
+          ? state.redrawVersion + 1
+          : state.redrawVersion,
       };
     case 'UNDO': {
       if (state.paths.length === 0) return state;
       const paths = state.paths.slice(0, -1);
-      const last = state.paths[state.paths.length - 1] as PathRecord;
+      const last = state.paths[state.paths.length - 1];
       return {
         paths,
         redoStack: [...state.redoStack, last],
@@ -38,7 +41,7 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
     }
     case 'REDO': {
       if (state.redoStack.length === 0) return state;
-      const top = state.redoStack[state.redoStack.length - 1] as PathRecord;
+      const top = state.redoStack[state.redoStack.length - 1];
       return {
         paths: [...state.paths, top],
         redoStack: state.redoStack.slice(0, -1),

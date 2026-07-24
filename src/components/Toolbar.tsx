@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { Tool } from '../types/drawing.types';
 import { ColorPicker } from './toolbar/ColorPicker';
 import { BrushSizeSlider } from './toolbar/BrushSizeSlider';
+import { ShapePicker } from './toolbar/ShapePicker';
 import { ToolButton } from './toolbar/ToolButton';
 import { ActionButton } from './toolbar/ActionButton';
 
@@ -22,7 +23,7 @@ interface Props {
   onToggleHistory: () => void;
 }
 
-const Divider = () => <div className="w-px h-8 bg-gray-200 mx-1" />;
+const Divider = () => <div className="w-px h-8 bg-gray-200 mx-1 shrink-0" />;
 
 const PanIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -41,6 +42,7 @@ const EraserIcon = () => (
     <path d="M20 20H7L3 16C2.5 15.5 2.5 14.5 3 14L13 4C13.5 3.5 14.5 3.5 15 4L20 9C20.5 9.5 20.5 10.5 20 11L11 20H20V20Z"/><path d="M17 14L7 20"/>
   </svg>
 );
+
 
 const UndoIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -107,18 +109,21 @@ export const Toolbar = React.memo(function Toolbar({
   }
 
   return (
-    <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-white/90 backdrop-blur-md rounded-2xl shadow-2xl p-3 flex items-center gap-2 sm:gap-4 z-10 border border-gray-100 transition-all">
+    <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-white/90 backdrop-blur-md rounded-2xl shadow-2xl z-10 border border-gray-100 transition-all max-w-[calc(100vw-2rem)]">
+    <div className="flex items-center gap-2 p-3 overflow-x-auto">
       <ColorPicker color={color} onChange={onColorChange} />
       <Divider />
       <BrushSizeSlider size={brushSize} onChange={onBrushSizeChange} />
       <Divider />
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 shrink-0">
         <ToolButton icon={<PanIcon />} label="Pan (Space)" isActive={currentTool === 'pan'} activeClass="bg-gray-200 text-gray-800 focus:ring-gray-300" onClick={() => onToolChange('pan')} />
         <ToolButton icon={<PenIcon />} label="Pen" isActive={currentTool === 'pen'} activeClass="bg-blue-100 text-blue-600 focus:ring-blue-400" onClick={() => onToolChange('pen')} />
         <ToolButton icon={<EraserIcon />} label="Eraser" isActive={currentTool === 'eraser'} activeClass="bg-gray-200 text-gray-800 focus:ring-gray-300" onClick={() => onToolChange('eraser')} />
       </div>
       <Divider />
-      <div className="flex items-center gap-1">
+      <ShapePicker currentTool={currentTool} onToolChange={onToolChange} />
+      <Divider />
+      <div className="flex items-center gap-1 shrink-0">
         <ActionButton icon={<UndoIcon />} label="Undo" onClick={onUndo} disabled={!canUndo} />
         <ActionButton icon={<RedoIcon />} label="Redo" onClick={onRedo} disabled={!canRedo} />
         <ActionButton icon={<ClearIcon />} label="Clear All" onClick={onClear} colorClass="text-red-500 hover:bg-red-50" />
@@ -134,12 +139,13 @@ export const Toolbar = React.memo(function Toolbar({
       <Divider />
       <button
         onClick={() => setMinimized(true)}
-        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors shrink-0"
         aria-label="Minimize toolbar"
         title="Minimize"
       >
         <ChevronDownIcon />
       </button>
+    </div>
     </div>
   );
 });
